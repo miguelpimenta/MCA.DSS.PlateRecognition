@@ -82,9 +82,10 @@ def __get_plate(uploaded_file):
             os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))        
         except Exception as e:
             os.remove(os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))
-            os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))        
+            os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))
+            return None, str(e)
           
-        return plate, e
+        return plate, None
 
 if __name__ == '__main__':    
     app.run(threaded=True, port=5001)    
