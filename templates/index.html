@@ -3,6 +3,29 @@
   <head>
       <title>File Upload</title>
   </head>
+  <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .flex-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .flex-container div {
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: center;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
   <body>
         <h1>ArqSist Plate Recognition</h1>
         <form method="POST" action="" enctype="multipart/form-data">
@@ -10,9 +33,15 @@
             <p><input type="submit" value="Submit"></p>
         </form>
         <hr>
-        {% for file in files %}
-            <img src="{{ url_for('get_image', filename=file) }}" style="width: 350px">
-            <label>{{file}}</label>
-        {% endfor %}
+        <div class="flex-container">
+            {% for file in files %}
+                <div style="flex-direction: column;
+                            align-items: center;
+                            display: flex;">
+                    <img src="{{ url_for('get_image', filename=file) }}" style="width: 250px">
+                    <label>{{file}}</label>
+                </div>
+            {% endfor %}
+        </div>
   </body>
 </html>

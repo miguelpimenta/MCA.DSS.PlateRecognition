@@ -12,12 +12,13 @@ app = Flask(__name__)
 
 app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.png', '.gif']
 app.config['UPLOAD_PATH'] = 'uploads'
-app.config['PLATE_RECOGNIZER_URL'] = os.getenv('PLATE_RECOGNIZER_URL')
+app.config['PLATE_RECOGNIZER_URL'] = 'https://api.platerecognizer.com/v1/plate-reader/'
 app.config['PLATE_RECOGNIZER_TOKEN'] = os.getenv('PLATE_RECOGNIZER_TOKEN')
 app.config['API_KEY'] = os.getenv('API_KEY')
 
 regions = ['pt', 'es'] 
 
+## Web Page
 @app.route('/', methods=['GET'])
 def index():
     files = os.listdir(app.config['UPLOAD_PATH'])
@@ -37,6 +38,7 @@ def upload_files():
         return jsonify({'error': error}), 500
     return redirect(url_for('index'))
 
+## API endpoint to handle image upload and plate recognition
 @app.route("/api/plate", methods=["POST"])
 def upload_image():
 
