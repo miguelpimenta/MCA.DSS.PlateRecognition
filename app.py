@@ -4,6 +4,9 @@ import requests
 import json
 import os
 import hmac
+import re
+import socket, ipaddress
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,7 +29,12 @@ def index():
 
 @app.route('/uploads/<filename>', methods=['GET'])
 def get_image(filename):
-    return send_from_directory(app.config['UPLOAD_PATH'], filename)
+    safe_filename = secure_filename(filename)
+    file_path = os.path.join(app.config['UPLOAD_PATH'], safe_filename)
+    if not os.path.exists(file_path):
+        abort(404)
+
+    return send_from_directory(app.config['UPLOAD_PATH'], safe_filename)
 
 @app.route('/', methods=['POST'])
 def upload_files():  
@@ -58,24 +66,30 @@ def upload_image():
 def __get_plate(uploaded_file):
     filename = secure_filename(uploaded_file.filename)
     
-    if filename != '':
+    if filename == '':
+        abort(400, 'Empty filename')
 
-        file_path = os.path.join(app.config['UPLOAD_PATH'], filename)
-        file_ext = os.path.splitext(filename)[1]
+    file_ext = os.path.splitext(filename)[1]
+    if file_ext not in app.config['UPLOAD_EXTENSIONS']:       
+        abort(400, 'Invalid file extension')
 
-        if file_ext not in app.config['UPLOAD_EXTENSIONS']:
-            abort(400)
-        uploaded_file.save(file_path)      
-    
+    file_path = os.path.join(app.config['UPLOAD_PATH'], filename)
+    uploaded_file.save(file_path)
+
+    PLATE_RECOGNIZER_URL = app.config['PLATE_RECOGNIZER_URL']
+    if not __safe_hostname(PLATE_RECOGNIZER_URL):
+        abort(403, 'Unsafe URL blocked by SSRF protection')
+
     with open(file_path, 'rb') as fp:
         response = requests.post(
-            app.config['PLATE_RECOGNIZER_URL'],
+            PLATE_RECOGNIZER_URL,
             data=dict(regions=regions),
             files=dict(upload=fp),
-            headers={'Authorization': app.config['PLATE_RECOGNIZER_TOKEN']})                    
+            headers={'Authorization': app.config['PLATE_RECOGNIZER_TOKEN']},
+            allow_redirects=False)                    
 
-        json_response = json.loads(json.dumps(response.json()))
-        plate = json_response["results"][0]["plate"]
+        json_response = response.json()
+        plate = __sanitize_string(json_response["results"][0]["plate"])
 
         print('Plate: ' + plate.upper())        
         fp.close()
@@ -88,6 +102,18 @@ def __get_plate(uploaded_file):
             return None, str(e)
           
         return plate, None
+    
+def __sanitize_string(string):
+    if re.fullmatch(r'[A-Z0-9\-]{1,10}', string.upper()):
+        return string.upper()
+    else:
+        raise ValueError("Invalid string format")
+    
+def __safe_hostname(url):
+    hostname = urlparse(url).hostname
+    ip = socket.gethostbyname(hostname)
+    ip_obj = ipaddress.ip_address(ip)
+    return not (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local)
 
 if __name__ == '__main__':    
     app.run(threaded=True, port=5001)    
