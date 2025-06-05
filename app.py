@@ -73,7 +73,12 @@ def __get_plate(uploaded_file):
     if file_ext not in app.config['UPLOAD_EXTENSIONS']:       
         abort(400, 'Invalid file extension')
 
-    file_path = os.path.join(app.config['UPLOAD_PATH'], filename)
+    upload_dir = app.config['UPLOAD_PATH']
+    file_path = os.path.join(upload_dir, filename)
+
+    if not __is_within_directory(upload_dir, file_path):
+        abort(400, 'Path traversal detected')
+
     uploaded_file.save(file_path)
 
     PLATE_RECOGNIZER_URL = app.config['PLATE_RECOGNIZER_URL']
@@ -86,22 +91,35 @@ def __get_plate(uploaded_file):
             data=dict(regions=regions),
             files=dict(upload=fp),
             headers={'Authorization': app.config['PLATE_RECOGNIZER_TOKEN']},
-            allow_redirects=False)                    
+            allow_redirects=False
+        )                    
 
         json_response = response.json()
         plate = __sanitize_string(json_response["results"][0]["plate"])
 
+        # Debug...
         print('Plate: ' + plate.upper())        
-        fp.close()
         
-        try: 
-            os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))        
+        safe_new_name = secure_filename(plate.upper() + file_ext)
+        new_path = os.path.join(app.config['UPLOAD_PATH'], safe_new_name)
+
+        if not __is_within_directory(upload_dir, new_path):
+            abort(400, 'Invalid rename path')
+
+        try:
+            os.rename(file_path, new_path)
+        except FileExistsError:
+            os.remove(new_path)
+            os.rename(file_path, new_path)
         except Exception as e:
-            os.remove(os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))
-            os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))
             return None, str(e)
           
         return plate, None
+    
+def __is_within_directory(directory, target):
+    abs_directory = os.path.abspath(directory)
+    abs_target = os.path.abspath(target)
+    return os.path.commonprefix([abs_directory, abs_target]) == abs_directory
     
 def __sanitize_string(string):
     if re.fullmatch(r'[A-Z0-9\-]{1,10}', string.upper()):
