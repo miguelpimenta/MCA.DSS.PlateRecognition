@@ -5,6 +5,7 @@ from werkzeug.utils import secure_filename
 from werkzeug.security import safe_join
 from io import BytesIO
 from PIL import Image
+import html
 import requests
 import json
 import os
@@ -34,7 +35,7 @@ regions = ['pt', 'es']
 ## Web Page
 @app.route('/', methods=['GET'])
 def index():
-    files = os.listdir(app.config['UPLOAD_PATH'])
+    files = os.listdir(app.config['IMAGES_PATH'])
     return render_template('index.html', files=files)
 
 @app.route('/uploads/<filename>', methods=['GET'])
@@ -88,6 +89,9 @@ def __get_plate(uploaded_file):
             headers={'Authorization': app.config['PLATE_RECOGNIZER_TOKEN']})                    
 
         json_response = json.loads(json.dumps(response.json()))
+        if not re.match(r'^[A-Za-z0-9]+$', json_response["results"][0]["plate"]):
+            raise ValueError("Invalid plate format!")
+        
         plate = json_response["results"][0]["plate"]
 
         print('Plate: ' + plate.upper())        
