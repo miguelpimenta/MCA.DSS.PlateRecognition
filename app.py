@@ -55,20 +55,26 @@ def upload_image():
     if authorization != (app.config['API_KEY']):
         return jsonify({'result': '403 Forbidden'}), 403
     else:        
-        uploaded_file = request.files['file'] 
-        plate = __get_plate(uploaded_file)    
+        uploaded_file = request.files['file']         
+        filename = secure_filename(uploaded_file.filename)  # Get the filename
+
+        if filename == '':
+            abort(400, 'Empty filename')
+
+        image_bytes = uploaded_file.read()
+
+        plate = __get_plate(image_bytes, filename)
+
+        if plate is None:
+            return jsonify({'error': 'Plate recognition failed'}), 500
         message = {
             'plate': plate
         }
         return jsonify(message), 200        
 
 ###
-def __get_plate(uploaded_file):
-    filename = secure_filename(uploaded_file.filename)
-    
-    if filename == '':
-        abort(400, 'Empty filename')
-
+def __get_plate(image_bytes: bytes, filename: str):
+        
     file_ext = os.path.splitext(filename)[1]
     if file_ext not in app.config['UPLOAD_EXTENSIONS']:       
         abort(400, 'Invalid file extension')
@@ -79,7 +85,7 @@ def __get_plate(uploaded_file):
     if not __is_within_directory(upload_dir, file_path):
         abort(400, 'Path traversal detected')
 
-    uploaded_file.save(file_path)
+    image_bytes.save(file_path)
 
     PLATE_RECOGNIZER_URL = app.config['PLATE_RECOGNIZER_URL']
     if not __safe_hostname(PLATE_RECOGNIZER_URL):
