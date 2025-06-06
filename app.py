@@ -88,11 +88,10 @@ def __get_plate(uploaded_file):
             files=dict(upload=fp),
             headers={'Authorization': app.config['PLATE_RECOGNIZER_TOKEN']})                    
 
-        json_response = json.loads(json.dumps(response.json()))
-        if not re.match(r'^[A-Za-z0-9]+$', json_response["results"][0]["plate"]):
-            raise ValueError("Invalid plate format!")
+        if not re.match(r'^[A-Za-z0-9]+$', response.json()["results"][0]["plate"]):
+            raise ValueError("Invalid format!")
         
-        plate = json_response["results"][0]["plate"]
+        plate = html.escape(response.json()["results"][0]["plate"])
 
         print('Plate: ' + plate.upper())        
         fp.close()
