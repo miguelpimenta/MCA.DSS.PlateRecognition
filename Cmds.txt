@@ -14,3 +14,11 @@ nodemon --exec python app.py
 pip install pipreqs
 pip freeze > requirements.txt
 pip install -r requirements.txt
+
+pip list --format=columns
+
+- Identify Outdated Packages
+pip list --outdated
+
+- Update Dependencies One by One
+pip install --upgrade <package-name>
