@@ -24,7 +24,7 @@ limiter = Limiter(get_remote_address, app=app)
 
 app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.png', '.gif']
 app.config['IMAGES_PATH'] = 'public/images'
-app.config['UPLOAD_PATH'] = 'uploads'
+app.config['UPLOAD_PATH'] = 'public/uploads'
 app.config['PLATE_RECOGNIZER_URL'] = 'https://api.platerecognizer.com/v1/plate-reader/'
 app.config['PLATE_RECOGNIZER_TOKEN'] = os.getenv('PLATE_RECOGNIZER_TOKEN')
 app.config['API_KEY'] = os.getenv('API_KEY')
@@ -34,116 +34,70 @@ regions = ['pt', 'es']
 ## Web Page
 @app.route('/', methods=['GET'])
 def index():
-    files = os.listdir(app.config['IMAGES_PATH'])
+    files = os.listdir(app.config['UPLOAD_PATH'])
     return render_template('index.html', files=files)
 
-@app.route('/public/images/<filename>', methods=['GET'])
+@app.route('/uploads/<filename>', methods=['GET'])
 def get_image(filename):
-    safe_filename = secure_filename(filename)
-    file_path = os.path.join(app.config['IMAGES_PATH'], safe_filename)
-    if not os.path.exists(file_path):
-        abort(404)
-    
-    return send_from_directory(app.config['IMAGES_PATH'], safe_filename)
+    return send_from_directory(app.config['IMAGES_PATH'], filename)
 
 @app.route('/', methods=['POST'])
 def upload_files():  
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400 
-        
-    uploaded_file = request.files['file']         
-    filename = secure_filename(uploaded_file.filename)  # Get the filename
-
-    if filename == '':
-        abort(400, 'Empty filename')        
-
-    image_bytes = uploaded_file.read()
-    
-    plate, error = __get_plate(image_bytes, filename)
+    uploaded_file = request.files['file'] 
+    plate, error = __get_plate(uploaded_file)
     if error:
         return jsonify({'error': error}), 500
-    print('Plate: ' + plate.upper())
     return redirect(url_for('index'))
 
 ## API endpoint to handle image upload and plate recognition
 @app.route("/api/plate", methods=["POST"])
 @limiter.limit("5 per minute")
 def upload_image():
-
     authorization = request.headers.get("Authorization")
 
     if authorization != (app.config['API_KEY']):
         return jsonify({'result': '403 Forbidden'}), 403
     else:        
-        uploaded_file = request.files['file']         
-        filename = secure_filename(uploaded_file.filename)  # Get the filename
-
-        print('filename: ' + filename)
-
-        if filename == '':
-            abort(400, 'Empty filename')
-
-        image_bytes = uploaded_file.read()
-
-        plate = __get_plate(image_bytes, filename)        
-
-        if plate is None:
-            return jsonify({'error': 'Plate recognition failed'}), 500
+        uploaded_file = request.files['file'] 
+        plate = __get_plate(uploaded_file)    
         message = {
             'plate': plate
         }
-        return jsonify(message), 200        
+        return jsonify(message), 200           
 
 ###
-def __get_plate(image_bytes: bytes, filename: str):
-        
-    file_ext = os.path.splitext(filename)[1]
-    if file_ext not in app.config['UPLOAD_EXTENSIONS']:       
-        abort(400, 'Invalid file extension')
+def __get_plate(uploaded_file):
+    filename = secure_filename(uploaded_file.filename)
+    
+    if filename != '':
 
-    upload_dir = app.config['UPLOAD_PATH']
-    file_path = os.path.join(upload_dir, filename)
+        file_path = os.path.join(app.config['UPLOAD_PATH'], filename)
+        file_ext = os.path.splitext(filename)[1]
 
-    # Convert bytes to a file-like object
-    try:
-        image = Image.open(BytesIO(image_bytes))
-        image.save(file_path)
-    except Exception as e:
-        abort(500, f"Error saving image: {str(e)}")    
-
-    PLATE_RECOGNIZER_URL = app.config['PLATE_RECOGNIZER_URL']
-    if not __safe_hostname(PLATE_RECOGNIZER_URL):
-        abort(403, 'Unsafe URL blocked by SSRF protection')
-
+        if file_ext not in app.config['UPLOAD_EXTENSIONS']:
+            abort(400)
+        uploaded_file.save(file_path)      
+    
     with open(file_path, 'rb') as fp:
         response = requests.post(
-            PLATE_RECOGNIZER_URL,
+            app.config['PLATE_RECOGNIZER_URL'],
             data=dict(regions=regions),
             files=dict(upload=fp),
-            headers={'Authorization': app.config['PLATE_RECOGNIZER_TOKEN']},
-            allow_redirects=False
-        )                    
+            headers={'Authorization': app.config['PLATE_RECOGNIZER_TOKEN']})                    
 
-        json_response = response.json()
-        plate = __sanitize_string(json_response["results"][0]["plate"])
+        json_response = json.loads(json.dumps(response.json()))
+        plate = json_response["results"][0]["plate"]
 
-        # Debug...
         print('Plate: ' + plate.upper())        
+        fp.close()
         
-        #safe_new_name = secure_filename(plate.upper() + file_ext)
-        safe_new_name = secure_filename(f"{plate.upper()}_{uuid.uuid4().hex}{file_ext}")
-        new_path = os.path.join(app.config['UPLOAD_PATH'], safe_new_name)
-
-        #if not __is_within_directory(upload_dir, new_path):
-        #    abort(400, 'Invalid rename path')
-
-        try:
-            #os.rename(file_path, new_path)
-            shutil.move(file_path, new_path)
-        except FileExistsError:
-            os.remove(new_path)
-            os.rename(file_path, new_path)
+        try: 
+            os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))        
         except Exception as e:
+            os.remove(os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))
+            os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))
             return None, str(e)
           
         return plate, None
