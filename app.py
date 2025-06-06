@@ -1,11 +1,18 @@
 from flask import Flask, request, jsonify, render_template, send_from_directory, url_for, abort, redirect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
+from werkzeug.security import safe_join
+from io import BytesIO
+from PIL import Image
 import requests
 import json
 import os
 import hmac
+import uuid
 import re
 import socket, ipaddress
+import shutil
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 
@@ -13,7 +20,10 @@ load_dotenv()
 
 app = Flask(__name__)
 
+limiter = Limiter(get_remote_address, app=app)
+
 app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.png', '.gif']
+app.config['IMAGES_PATH'] = 'public/images'
 app.config['UPLOAD_PATH'] = 'uploads'
 app.config['PLATE_RECOGNIZER_URL'] = 'https://api.platerecognizer.com/v1/plate-reader/'
 app.config['PLATE_RECOGNIZER_TOKEN'] = os.getenv('PLATE_RECOGNIZER_TOKEN')
@@ -24,30 +34,40 @@ regions = ['pt', 'es']
 ## Web Page
 @app.route('/', methods=['GET'])
 def index():
-    files = os.listdir(app.config['UPLOAD_PATH'])
+    files = os.listdir(app.config['IMAGES_PATH'])
     return render_template('index.html', files=files)
 
-@app.route('/uploads/<filename>', methods=['GET'])
+@app.route('/public/images/<filename>', methods=['GET'])
 def get_image(filename):
     safe_filename = secure_filename(filename)
-    file_path = os.path.join(app.config['UPLOAD_PATH'], safe_filename)
+    file_path = os.path.join(app.config['IMAGES_PATH'], safe_filename)
     if not os.path.exists(file_path):
         abort(404)
-
-    return send_from_directory(app.config['UPLOAD_PATH'], safe_filename)
+    
+    return send_from_directory(app.config['IMAGES_PATH'], safe_filename)
 
 @app.route('/', methods=['POST'])
 def upload_files():  
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400 
-    uploaded_file = request.files['file'] 
-    plate, error = __get_plate(uploaded_file)
+        
+    uploaded_file = request.files['file']         
+    filename = secure_filename(uploaded_file.filename)  # Get the filename
+
+    if filename == '':
+        abort(400, 'Empty filename')        
+
+    image_bytes = uploaded_file.read()
+    
+    plate, error = __get_plate(image_bytes, filename)
     if error:
         return jsonify({'error': error}), 500
+    print('Plate: ' + plate.upper())
     return redirect(url_for('index'))
 
 ## API endpoint to handle image upload and plate recognition
 @app.route("/api/plate", methods=["POST"])
+@limiter.limit("5 per minute")
 def upload_image():
 
     authorization = request.headers.get("Authorization")
@@ -58,12 +78,14 @@ def upload_image():
         uploaded_file = request.files['file']         
         filename = secure_filename(uploaded_file.filename)  # Get the filename
 
+        print('filename: ' + filename)
+
         if filename == '':
             abort(400, 'Empty filename')
 
         image_bytes = uploaded_file.read()
 
-        plate = __get_plate(image_bytes, filename)
+        plate = __get_plate(image_bytes, filename)        
 
         if plate is None:
             return jsonify({'error': 'Plate recognition failed'}), 500
@@ -82,10 +104,12 @@ def __get_plate(image_bytes: bytes, filename: str):
     upload_dir = app.config['UPLOAD_PATH']
     file_path = os.path.join(upload_dir, filename)
 
-    if not __is_within_directory(upload_dir, file_path):
-        abort(400, 'Path traversal detected')
-
-    image_bytes.save(file_path)
+    # Convert bytes to a file-like object
+    try:
+        image = Image.open(BytesIO(image_bytes))
+        image.save(file_path)
+    except Exception as e:
+        abort(500, f"Error saving image: {str(e)}")    
 
     PLATE_RECOGNIZER_URL = app.config['PLATE_RECOGNIZER_URL']
     if not __safe_hostname(PLATE_RECOGNIZER_URL):
@@ -106,14 +130,16 @@ def __get_plate(image_bytes: bytes, filename: str):
         # Debug...
         print('Plate: ' + plate.upper())        
         
-        safe_new_name = secure_filename(plate.upper() + file_ext)
+        #safe_new_name = secure_filename(plate.upper() + file_ext)
+        safe_new_name = secure_filename(f"{plate.upper()}_{uuid.uuid4().hex}{file_ext}")
         new_path = os.path.join(app.config['UPLOAD_PATH'], safe_new_name)
 
-        if not __is_within_directory(upload_dir, new_path):
-            abort(400, 'Invalid rename path')
+        #if not __is_within_directory(upload_dir, new_path):
+        #    abort(400, 'Invalid rename path')
 
         try:
-            os.rename(file_path, new_path)
+            #os.rename(file_path, new_path)
+            shutil.move(file_path, new_path)
         except FileExistsError:
             os.remove(new_path)
             os.rename(file_path, new_path)
@@ -122,10 +148,15 @@ def __get_plate(image_bytes: bytes, filename: str):
           
         return plate, None
     
+#def __is_within_directory(directory, target):
+#    werkzeug.security.safe_join()
+#    abs_directory = os.path.abspath(directory)
+#    abs_target = os.path.abspath(target)
+#    return os.path.commonprefix([abs_directory, abs_target]) == abs_directory
+
 def __is_within_directory(directory, target):
-    abs_directory = os.path.abspath(directory)
-    abs_target = os.path.abspath(target)
-    return os.path.commonprefix([abs_directory, abs_target]) == abs_directory
+    safe_path = safe_join(directory, target)
+    return safe_path is not None
     
 def __sanitize_string(string):
     if re.fullmatch(r'[A-Z0-9\-]{1,10}', string.upper()):
@@ -138,6 +169,16 @@ def __safe_hostname(url):
     ip = socket.gethostbyname(hostname)
     ip_obj = ipaddress.ip_address(ip)
     return not (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local)
+
+@app.errorhandler(400)
+def bad_request(error):
+    print('error: ' + str(error)) 
+    return jsonify({'error': 'Bad Request'}), 400
+
+@app.errorhandler(403)
+def forbidden():    
+    print('error: ' + str(error)) 
+    return jsonify({'error': 'Forbidden'}), 403
 
 if __name__ == '__main__':    
     app.run(threaded=True, port=5001)    
