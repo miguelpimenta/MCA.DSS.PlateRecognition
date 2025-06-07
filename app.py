@@ -38,10 +38,23 @@ def index():
     files = os.listdir(app.config['IMAGES_PATH'])
     return render_template('index.html', files=files)
 
+#@app.route('/uploads/<filename>', methods=['GET'])
+#def get_image(filename):
+#    file_name = sanitize_filename(filename)
+#    return send_from_directory(app.config['IMAGES_PATH'], file_name)
 @app.route('/uploads/<filename>', methods=['GET'])
 def get_image(filename):
     file_name = sanitize_filename(filename)
-    return send_from_directory(app.config['IMAGES_PATH'], file_name)
+    try:
+        return send_from_directory(
+            app.config['IMAGES_PATH'], 
+            file_name,
+            as_attachment=False,
+            download_name=file_name  # Use sanitized name in headers
+        )
+    except FileNotFoundError:
+        # Return safe error without reflecting user input
+        abort(404)
 
 @app.route('/', methods=['POST'])
 def upload_files():  
@@ -129,6 +142,10 @@ def sanitize_filename(filename):
         #filename = 'unnamed_file'    
     return filename
 
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
 
 def __is_within_directory(directory, target):
     safe_path = safe_join(directory, target)
