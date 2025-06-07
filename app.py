@@ -44,7 +44,7 @@ def index():
 #    return send_from_directory(app.config['IMAGES_PATH'], file_name)
 @app.route('/uploads', methods=['GET'])
 def get_image():
-    filename = request.args.get('filename', '')
+    filename =  html.escape(request.args.get('filename', ''))
 
     # Only allow alphanumeric + common image extensions
     if not re.match(r'^[a-zA-Z0-9_.-]+\.(jpg|jpeg|png|gif|webp)$', filename):
@@ -91,8 +91,7 @@ def upload_image():
         return jsonify(message), 200           
 
 ###
-def __get_plate(uploaded_file):
-    #filename = secure_filename(uploaded_file.filename)
+def __get_plate(uploaded_file):    
     filename = sanitize_filename(uploaded_file.filename)
     
     if filename == '':
@@ -118,8 +117,7 @@ def __get_plate(uploaded_file):
         
         plate = html.escape(response.json()["results"][0]["plate"])
 
-        print('Plate: ' + plate.upper())        
-        fp.close()
+        print('Plate: ' + plate.upper())
         
         try: 
             os.rename(file_path, os.path.join(app.config['IMAGES_PATH'], plate.upper() + file_ext))
@@ -154,6 +152,7 @@ def sanitize_filename(filename):
 @app.after_request
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
     return response
 
 def __is_within_directory(directory, target):
