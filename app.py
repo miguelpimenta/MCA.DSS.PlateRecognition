@@ -71,7 +71,7 @@ def upload_image():
 ###
 def __get_plate(uploaded_file):
     #filename = secure_filename(uploaded_file.filename)
-    filename = sanitize_filename(filename)
+    filename = sanitize_filename(uploaded_file.filename)
     
     if filename == '':
         abort(400)
@@ -116,21 +116,16 @@ def __get_plate(uploaded_file):
 
 def sanitize_filename(filename):
     # Remove directory traversal attempts
-    filename = os.path.basename(filename)
-    
+    filename = os.path.basename(filename)    
     # Remove null bytes and other dangerous characters
-    filename = filename.replace('\0', '')
-    
+    filename = filename.replace('\0', '')    
     # Replace path separators and other dangerous chars
-    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
-    
+    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)    
     # Remove leading/trailing dots and spaces
-    filename = filename.strip('. ')
-    
+    filename = filename.strip('. ')    
     # Ensure filename isn't empty
-    if not filename:
-        filename = 'unnamed_file'
-    
+    #if not filename:
+        #filename = 'unnamed_file'    
     return filename
 
 
