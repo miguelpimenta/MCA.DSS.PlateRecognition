@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, render_template, send_from_directory, url_for, abort, redirect
 from flask_limiter import Limiter
+from flask_talisman import Talisman
 from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
 from werkzeug.security import safe_join
@@ -20,6 +21,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
+Talisman(app, strict_transport_security=True,
+        strict_transport_security_max_age=31536000, # 1 year in seconds
+        strict_transport_security_include_subdomains=True,
+        strict_transport_security_preload=False)
 
 limiter = Limiter(get_remote_address, app=app)
 
@@ -164,4 +169,4 @@ def forbidden():
     return jsonify({'error': 'Forbidden'}), 403
 
 if __name__ == '__main__':    
-    app.run(threaded=True, port=5001)    
+    app.run(threaded=True, port=5001, ssl_context='adhoc')    
