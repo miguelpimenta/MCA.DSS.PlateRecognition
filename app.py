@@ -48,12 +48,25 @@ def get_image():
     filename =  html.escape(request.args.get('filename', ''))
     # Only allow alphanumeric + common image extensions
     if not re.match(r'^[a-zA-Z0-9_.-]+\.(jpg|jpeg|png)$', filename):
-        abort(400)    
-    # Use werkzeug's secure_filename as additional layer
-    safe_filename = secure_filename(filename)
-    file_path = os.path.join(app.config['IMAGES_PATH'], safe_filename)    
-    if not os.path.exists(file_path):
+        abort(400)
+
+    base_path = app.config['IMAGES_PATH']
+    requested_path = os.path.join(base_path, filename)
+    
+    abs_requested_path = os.path.abspath(requested_path)
+    real_requested_path = os.path.realpath(abs_requested_path)
+    real_base_path = os.path.realpath(base_path)
+    if not real_requested_path.startswith(real_base_path):
+        abort(403, "Access denied: file is outside the allowed directory.")
+    
+    if not os.path.exists(real_requested_path):
         abort(404)
+
+    # Use werkzeug's secure_filename as additional layer
+    #safe_filename = secure_filename(filename)
+    #file_path = os.path.join(app.config['IMAGES_PATH'], safe_filename)    
+    #if not os.path.exists(file_path):
+    #    abort(404)
     return send_from_directory(app.config['IMAGES_PATH'], filename)
 
 @app.route('/', methods=['POST'])
