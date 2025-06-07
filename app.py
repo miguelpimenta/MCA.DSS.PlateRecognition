@@ -40,7 +40,8 @@ def index():
 
 @app.route('/uploads/<filename>', methods=['GET'])
 def get_image(filename):
-    return send_from_directory(app.config['IMAGES_PATH'], filename)
+    file_name = sanitize_filename(filename)
+    return send_from_directory(app.config['IMAGES_PATH'], file_name)
 
 @app.route('/', methods=['POST'])
 def upload_files():  
