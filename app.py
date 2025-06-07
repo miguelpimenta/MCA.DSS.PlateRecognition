@@ -21,14 +21,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-Talisman(app, strict_transport_security=True,
-        strict_transport_security_max_age=31536000, # 1 year in seconds
-        strict_transport_security_include_subdomains=True,
-        strict_transport_security_preload=False)
+#Talisman(app, strict_transport_security=True,
+#        strict_transport_security_max_age=31536000, # 1 year in seconds
+#        strict_transport_security_include_subdomains=True,
+#        strict_transport_security_preload=False)
 
 limiter = Limiter(get_remote_address, app=app)
 
-app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.png', '.gif']
+app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.jpeg', '.png']
 app.config['IMAGES_PATH'] = 'public/images'
 app.config['UPLOAD_PATH'] = 'public/uploads'
 app.config['PLATE_RECOGNIZER_URL'] = 'https://api.platerecognizer.com/v1/plate-reader/'
@@ -46,7 +46,12 @@ def index():
 @app.route('/images/', methods=['GET'])
 def get_image():
     filename =  html.escape(request.args.get('filename', ''))
-    file_path = os.path.join(app.config['IMAGES_PATH'], filename)    
+    # Only allow alphanumeric + common image extensions
+    if not re.match(r'^[a-zA-Z0-9_.-]+\.(jpg|jpeg|png)$', filename):
+        abort(400)    
+    # Use werkzeug's secure_filename as additional layer
+    safe_filename = secure_filename(filename)
+    file_path = os.path.join(app.config['IMAGES_PATH'], safe_filename)    
     if not os.path.exists(file_path):
         abort(404)
     return send_from_directory(app.config['IMAGES_PATH'], filename)
@@ -147,7 +152,7 @@ def __safe_hostname(url):
     ip = socket.gethostbyname(hostname)
     ip_obj = ipaddress.ip_address(ip)
     return not (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local)
-
+    
 @app.after_request
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -165,4 +170,4 @@ def forbidden():
     return jsonify({'error': 'Forbidden'}), 403
 
 if __name__ == '__main__':    
-    app.run(threaded=True, port=5001, ssl_context='adhoc')    
+    app.run(threaded=True, port=5001)#, ssl_context='adhoc')    
