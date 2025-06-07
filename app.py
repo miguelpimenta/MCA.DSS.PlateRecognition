@@ -38,31 +38,13 @@ def index():
     files = os.listdir(app.config['IMAGES_PATH'])
     return render_template('index.html', files=files)
 
-#@app.route('/uploads/<filename>', methods=['GET'])
-#def get_image(filename):
-#    file_name = sanitize_filename(filename)
-#    return send_from_directory(app.config['IMAGES_PATH'], file_name)
-@app.route('/uploads', methods=['GET'])
-def get_image():
-    filename =  html.escape(request.args.get('filename', ''))
-
-    # Only allow alphanumeric + common image extensions
-    if not re.match(r'^[a-zA-Z0-9_.-]+\.(jpg|jpeg|png|gif|webp)$', filename):
-        abort(400)
-    
-    # Use werkzeug's secure_filename as additional layer
-    safe_filename = secure_filename(filename)
-    
-    # Verify file exists before serving
-    file_path = os.path.join(app.config['IMAGES_PATH'], safe_filename)
+@app.route('/images/<filename>', methods=['GET'])
+def get_image(filename):
+    file_name =  html.escape(filename)
+    file_path = os.path.join(app.config['IMAGES_PATH'], file_name)    
     if not os.path.exists(file_path):
         abort(404)
-    
-    return send_from_directory(
-        app.config['IMAGES_PATH'], 
-        safe_filename,
-        as_attachment=False
-    )
+    return send_from_directory(app.config['IMAGES_PATH'], file_name)
 
 @app.route('/', methods=['POST'])
 def upload_files():  
