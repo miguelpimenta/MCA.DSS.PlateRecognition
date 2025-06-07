@@ -42,8 +42,10 @@ def index():
 #def get_image(filename):
 #    file_name = sanitize_filename(filename)
 #    return send_from_directory(app.config['IMAGES_PATH'], file_name)
-@app.route('/uploads/<filename>', methods=['GET'])
-def get_image(filename):
+@app.route('/uploads', methods=['GET'])
+def get_image():
+    filename = request.args.get('filename', '')
+
     # Only allow alphanumeric + common image extensions
     if not re.match(r'^[a-zA-Z0-9_.-]+\.(jpg|jpeg|png|gif|webp)$', filename):
         abort(400)
