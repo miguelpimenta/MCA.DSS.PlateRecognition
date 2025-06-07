@@ -21,12 +21,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-#Talisman(app, strict_transport_security=True,
-#        strict_transport_security_max_age=31536000, # 1 year in seconds
-#        strict_transport_security_include_subdomains=True,
-#        strict_transport_security_preload=False)
+Talisman(app, strict_transport_security=True,
+        strict_transport_security_max_age=31536000, # 1 year in seconds
+        strict_transport_security_include_subdomains=True,
+        strict_transport_security_preload=False)
 
-limiter = Limiter(get_remote_address, app=app)
+limiter = Limiter(get_remote_address, 
+    app=app, 
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://", # You might want to use a more persistent storage in production)
+)
 
 app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.jpeg', '.png']
 app.config['IMAGES_PATH'] = 'public/images'
@@ -37,36 +41,36 @@ app.config['API_KEY'] = os.getenv('API_KEY')
 
 regions = ['pt', 'es'] 
 
+os.makedirs(app.config['UPLOAD_PATH'], exist_ok=True)
+os.makedirs(app.config['IMAGES_PATH'], exist_ok=True)
+
 ## Web Page
 @app.route('/', methods=['GET'])
 def index():
     files = os.listdir(app.config['IMAGES_PATH'])
     return render_template('index.html', files=files)
 
+# Checkmarx: ignore [CSRF] This GET endpoint only retrieves static images and does not modify server state.
 @app.route('/images/', methods=['GET'])
 def get_image():
     filename =  html.escape(request.args.get('filename', ''))
-    # Only allow alphanumeric + common image extensions
+
     if not re.match(r'^[a-zA-Z0-9_.-]+\.(jpg|jpeg|png)$', filename):
         abort(400)
 
     base_path = app.config['IMAGES_PATH']
     requested_path = os.path.join(base_path, filename)
     
-    abs_requested_path = os.path.abspath(requested_path)
-    real_requested_path = os.path.realpath(abs_requested_path)
+    absolute_requested_path = os.path.abspath(requested_path)
+    real_requested_path = os.path.realpath(absolute_requested_path)
     real_base_path = os.path.realpath(base_path)
+
     if not real_requested_path.startswith(real_base_path):
-        abort(403, "Access denied: file is outside the allowed directory.")
+        abort(403, "Access denied")
     
     if not os.path.exists(real_requested_path):
         abort(404)
 
-    # Use werkzeug's secure_filename as additional layer
-    #safe_filename = secure_filename(filename)
-    #file_path = os.path.join(app.config['IMAGES_PATH'], safe_filename)    
-    #if not os.path.exists(file_path):
-    #    abort(404)
     return send_from_directory(app.config['IMAGES_PATH'], filename)
 
 @app.route('/', methods=['POST'])
@@ -76,7 +80,7 @@ def upload_files():
     uploaded_file = request.files['file'] 
     plate, error = __get_plate(uploaded_file)
     if error:
-        return jsonify({'error': error}), 500
+        abort(500)
     return redirect(url_for('index'))
 
 ## API endpoint to handle image upload and plate recognition
@@ -89,7 +93,9 @@ def upload_image():
         return jsonify({'result': '403 Forbidden'}), 403
     else:        
         uploaded_file = request.files['file'] 
-        plate = __get_plate(uploaded_file)    
+        plate, error = __get_plate(uploaded_file)    
+        if error:
+            abort(500)
         message = {
             'plate': plate
         }
@@ -99,39 +105,53 @@ def upload_image():
 def __get_plate(uploaded_file):    
     filename = sanitize_filename(uploaded_file.filename)
     
-    if filename == '':
+    if not filename:        
         abort(400)
 
     file_path = os.path.join(app.config['UPLOAD_PATH'], filename)
-    file_ext = os.path.splitext(filename)[1]
-
-    if file_ext not in app.config['UPLOAD_EXTENSIONS']:
+    file_extension = os.path.splitext(filename)[1].lower()
+    if file_extension not in app.config['UPLOAD_EXTENSIONS']:
         abort(400)
 
-    uploaded_file.save(file_path)      
+    plate = None
+    error_message = None
+    try:
+        uploaded_file.save(file_path)      
     
-    with open(file_path, 'rb') as fp:
-        response = requests.post(
-            app.config['PLATE_RECOGNIZER_URL'],
-            data=dict(regions=regions),
-            files=dict(upload=fp),
-            headers={'Authorization': app.config['PLATE_RECOGNIZER_TOKEN']})       
-                  
-        if not re.match(r'^[A-Za-z0-9]+$', response.json()["results"][0]["plate"]):
-            raise ValueError("Invalid format!")
-        
-        plate = html.escape(response.json()["results"][0]["plate"])
+        with open(file_path, 'rb') as fp:
+            response = requests.post(
+                app.config['PLATE_RECOGNIZER_URL'],
+                data=dict(regions=regions),
+                files=dict(upload=fp),
+                headers={'Authorization': app.config['PLATE_RECOGNIZER_TOKEN']}
+            )       
+            response.raise_for_status()
+                    
+            if not re.match(r'^[A-Za-z0-9]+$', response.json()["results"][0]["plate"]):
+                raise ValueError("Invalid format!")
+            
+            plate = html.escape(response.json()["results"][0]["plate"])
 
-        print('Plate: ' + plate.upper())
-        
-        try: 
-            os.rename(file_path, os.path.join(app.config['IMAGES_PATH'], plate.upper() + file_ext))
-        except Exception as e:
+            print('Plate: ' + plate.upper())
+            
+            final_file_path = os.path.join(app.config['IMAGES_PATH'], plate.upper() + file_extension)
+            os.rename(file_path, final_file_path)
+    except Exception as e:
             #os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))
-            os.remove(file_path)            
-            return None, str(e)
+            os.remove(file_path)
+            print(str(e))
+            error_message = "Internal Server Error..."
+            
+    finally:
+        # Ensure the temporary file is removed, even if errors occurred
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                print(f"Cleaned up temporary file: {file_path}")
+            except OSError as e:
+                print(f"Warning: Could not remove temporary file {file_path}: {e}")
           
-        return plate, None
+    return plate, error_message
 
 def sanitize_filename(filename):
     # Remove directory traversal attempts
@@ -142,11 +162,8 @@ def sanitize_filename(filename):
     filename = re.sub(r'[<>:"/\\|?*]', '_', filename)    
     # Remove leading/trailing dots and spaces
     filename = filename.strip('. ')    
-    # Ensure filename isn't empty
-    #if not filename:
-        #filename = 'unnamed_file'    
     print(f"Sanitized filename: {filename}")
-    return filename
+    return secure_filename(filename)
 
 
 
@@ -183,4 +200,4 @@ def forbidden():
     return jsonify({'error': 'Forbidden'}), 403
 
 if __name__ == '__main__':    
-    app.run(threaded=True, port=5001)#, ssl_context='adhoc')    
+    app.run(threaded=True, port=5001, ssl_context='adhoc')    
