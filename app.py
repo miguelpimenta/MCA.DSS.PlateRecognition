@@ -21,10 +21,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-Talisman(app, strict_transport_security=True,
-        strict_transport_security_max_age=31536000, # 1 year in seconds
-        strict_transport_security_include_subdomains=True,
-        strict_transport_security_preload=False)
+#Talisman(app, strict_transport_security=True,
+#        strict_transport_security_max_age=31536000, # 1 year in seconds
+#        strict_transport_security_include_subdomains=True,
+#        strict_transport_security_preload=False)
 
 limiter = Limiter(get_remote_address, app=app)
 
@@ -43,13 +43,13 @@ def index():
     files = os.listdir(app.config['IMAGES_PATH'])
     return render_template('index.html', files=files)
 
-@app.route('/images/<filename>', methods=['GET'])
-def get_image(filename):
-    file_name =  html.escape(filename)
-    file_path = os.path.join(app.config['IMAGES_PATH'], file_name)    
+@app.route('/images/', methods=['GET'])
+def get_image():
+    filename =  html.escape(request.args.get('filename', ''))
+    file_path = os.path.join(app.config['IMAGES_PATH'], filename)    
     if not os.path.exists(file_path):
         abort(404)
-    return send_from_directory(app.config['IMAGES_PATH'], file_name)
+    return send_from_directory(app.config['IMAGES_PATH'], filename)
 
 @app.route('/', methods=['POST'])
 def upload_files():  
@@ -109,8 +109,8 @@ def __get_plate(uploaded_file):
         try: 
             os.rename(file_path, os.path.join(app.config['IMAGES_PATH'], plate.upper() + file_ext))
         except Exception as e:
-            os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))
-            os.remove(os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))            
+            #os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))
+            os.remove(file_path)            
             return None, str(e)
           
         return plate, None
@@ -169,4 +169,4 @@ def forbidden():
     return jsonify({'error': 'Forbidden'}), 403
 
 if __name__ == '__main__':    
-    app.run(threaded=True, port=5001, ssl_context='adhoc')    
+    app.run(threaded=True, port=5001)#, ssl_context='adhoc')    
