@@ -21,10 +21,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-#Talisman(app, strict_transport_security=True,
-#        strict_transport_security_max_age=31536000, # 1 year in seconds
-#        strict_transport_security_include_subdomains=True,
-#        strict_transport_security_preload=False)
+Talisman(app, strict_transport_security=True,
+        strict_transport_security_max_age=31536000, # 1 year in seconds
+        strict_transport_security_include_subdomains=True,
+        strict_transport_security_preload=False)
 
 limiter = Limiter(get_remote_address, app=app)
 
@@ -114,12 +114,6 @@ def __get_plate(uploaded_file):
             return None, str(e)
           
         return plate, None
-    
-#def __is_within_directory(directory, target):
-#    werkzeug.security.safe_join()
-#    abs_directory = os.path.abspath(directory)
-#    abs_target = os.path.abspath(target)
-#    return os.path.commonprefix([abs_directory, abs_target]) == abs_directory
 
 def sanitize_filename(filename):
     # Remove directory traversal attempts
@@ -136,11 +130,7 @@ def sanitize_filename(filename):
     print(f"Sanitized filename: {filename}")
     return filename
 
-@app.after_request
-def add_security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    return response
+
 
 def __is_within_directory(directory, target):
     safe_path = safe_join(directory, target)
@@ -158,6 +148,12 @@ def __safe_hostname(url):
     ip_obj = ipaddress.ip_address(ip)
     return not (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local)
 
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    return response
+
 @app.errorhandler(400)
 def bad_request(error):
     print('error: ' + str(error)) 
@@ -169,4 +165,4 @@ def forbidden():
     return jsonify({'error': 'Forbidden'}), 403
 
 if __name__ == '__main__':    
-    app.run(threaded=True, port=5001)#, ssl_context='adhoc')    
+    app.run(threaded=True, port=5001, ssl_context='adhoc')    
