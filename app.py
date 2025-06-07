@@ -70,24 +70,27 @@ def upload_image():
 
 ###
 def __get_plate(uploaded_file):
-    filename = secure_filename(uploaded_file.filename)
+    #filename = secure_filename(uploaded_file.filename)
+    filename = sanitize_filename(filename)
     
-    if filename != '':
+    if filename == '':
+        abort(400)
 
-        file_path = os.path.join(app.config['UPLOAD_PATH'], filename)
-        file_ext = os.path.splitext(filename)[1]
+    file_path = os.path.join(app.config['UPLOAD_PATH'], filename)
+    file_ext = os.path.splitext(filename)[1]
 
-        if file_ext not in app.config['UPLOAD_EXTENSIONS']:
-            abort(400)
-        uploaded_file.save(file_path)      
+    if file_ext not in app.config['UPLOAD_EXTENSIONS']:
+        abort(400)
+
+    uploaded_file.save(file_path)      
     
     with open(file_path, 'rb') as fp:
         response = requests.post(
             app.config['PLATE_RECOGNIZER_URL'],
             data=dict(regions=regions),
             files=dict(upload=fp),
-            headers={'Authorization': app.config['PLATE_RECOGNIZER_TOKEN']})                    
-
+            headers={'Authorization': app.config['PLATE_RECOGNIZER_TOKEN']})       
+                  
         if not re.match(r'^[A-Za-z0-9]+$', response.json()["results"][0]["plate"]):
             raise ValueError("Invalid format!")
         
@@ -97,10 +100,10 @@ def __get_plate(uploaded_file):
         fp.close()
         
         try: 
-            os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))        
+            os.rename(file_path, os.path.join(app.config['IMAGES_PATH'], plate.upper() + file_ext))
         except Exception as e:
-            os.remove(os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))
             os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))
+            os.remove(os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))            
             return None, str(e)
           
         return plate, None
@@ -110,6 +113,26 @@ def __get_plate(uploaded_file):
 #    abs_directory = os.path.abspath(directory)
 #    abs_target = os.path.abspath(target)
 #    return os.path.commonprefix([abs_directory, abs_target]) == abs_directory
+
+def sanitize_filename(filename):
+    # Remove directory traversal attempts
+    filename = os.path.basename(filename)
+    
+    # Remove null bytes and other dangerous characters
+    filename = filename.replace('\0', '')
+    
+    # Replace path separators and other dangerous chars
+    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    
+    # Remove leading/trailing dots and spaces
+    filename = filename.strip('. ')
+    
+    # Ensure filename isn't empty
+    if not filename:
+        filename = 'unnamed_file'
+    
+    return filename
+
 
 def __is_within_directory(directory, target):
     safe_path = safe_join(directory, target)
