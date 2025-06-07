@@ -44,17 +44,23 @@ def index():
 #    return send_from_directory(app.config['IMAGES_PATH'], file_name)
 @app.route('/uploads/<filename>', methods=['GET'])
 def get_image(filename):
-    file_name = sanitize_filename(filename)
-    try:
-        return send_from_directory(
-            app.config['IMAGES_PATH'], 
-            file_name,
-            as_attachment=False,
-            download_name=file_name  # Use sanitized name in headers
-        )
-    except FileNotFoundError:
-        # Return safe error without reflecting user input
+    # Only allow alphanumeric + common image extensions
+    if not re.match(r'^[a-zA-Z0-9_.-]+\.(jpg|jpeg|png|gif|webp)$', filename):
+        abort(400)
+    
+    # Use werkzeug's secure_filename as additional layer
+    safe_filename = secure_filename(filename)
+    
+    # Verify file exists before serving
+    file_path = os.path.join(app.config['IMAGES_PATH'], safe_filename)
+    if not os.path.exists(file_path):
         abort(404)
+    
+    return send_from_directory(
+        app.config['IMAGES_PATH'], 
+        safe_filename,
+        as_attachment=False
+    )
 
 @app.route('/', methods=['POST'])
 def upload_files():  
@@ -140,6 +146,7 @@ def sanitize_filename(filename):
     # Ensure filename isn't empty
     #if not filename:
         #filename = 'unnamed_file'    
+    print(f"Sanitized filename: {filename}")
     return filename
 
 @app.after_request
