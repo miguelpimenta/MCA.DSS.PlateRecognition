@@ -33,7 +33,7 @@ limiter = Limiter(
     storage_uri="memory://", # You might want to use a more persistent storage in production
 )
 
-app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.jpeg', '.png']
+app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.jpeg']
 app.config['IMAGES_PATH'] = 'public/images'
 app.config['UPLOAD_PATH'] = 'public/uploads'
 app.config['PLATE_RECOGNIZER_URL'] = 'https://api.platerecognizer.com/v1/plate-reader/'
@@ -56,7 +56,7 @@ def index():
 def get_image():
     filename =  html.escape(request.args.get('filename', ''))
 
-    if not re.match(r'^[a-zA-Z0-9_.-]+\.(jpg|jpeg|png)$', filename):
+    if not re.match(r'^[a-zA-Z0-9_.-]+\.(jpg|jpeg)$', filename):
         abort(400)
 
     base_path = app.config['IMAGES_PATH']
@@ -104,7 +104,7 @@ def upload_image():
         sanitized_filename = sanitize_filename(filename)
         file_extension = os.path.splitext(sanitized_filename)[1].lower()
 
-        plate, error = __get_plate(image_bytes, file_extension)
+        plate, error = __get_plate(image_bytes)
         
         if error:
             abort(500)
@@ -114,7 +114,7 @@ def upload_image():
         return jsonify(message), 200           
 
 ###
-def __get_plate(image_bytes, file_extension):    
+def __get_plate(image_bytes):    
     #filename = sanitize_filename(uploaded_file.filename)
     #sanitized_filename = sanitize_filename(filename)
     
@@ -126,7 +126,7 @@ def __get_plate(image_bytes, file_extension):
     #if file_ext not in app.config['UPLOAD_EXTENSIONS']:
     #    return None, f"File extension '{file_ext}' not allowed."
     unique_id = str(uuid.uuid4())
-    temp_filename = f"{unique_id}.{file_extension}"
+    temp_filename = f"{unique_id}.jpg"  # Use a unique filename to avoid conflicts
 
     if not image_bytes:
         return None, "Image bytes are empty or could not be read."
