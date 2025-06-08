@@ -26,10 +26,11 @@ Talisman(app, strict_transport_security=True,
         strict_transport_security_include_subdomains=True,
         strict_transport_security_preload=False)
 
-limiter = Limiter(get_remote_address, 
-    app=app, 
+limiter = Limiter(
+    get_remote_address,
+    app=app,
     default_limits=["200 per day", "50 per hour"],
-    storage_uri="memory://", # You might want to use a more persistent storage in production)
+    storage_uri="memory://", # You might want to use a more persistent storage in production
 )
 
 app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.jpeg', '.png']
@@ -102,21 +103,26 @@ def upload_image():
         return jsonify(message), 200           
 
 ###
-def __get_plate(uploaded_file):    
-    filename = sanitize_filename(uploaded_file.filename)
+def __get_plate(image_bytes, filename):    
+    #filename = sanitize_filename(uploaded_file.filename)
+    sanitized_filename = sanitize_filename(filename)
     
-    if not filename:        
+    if not sanitized_filename:        
         abort(400)
 
-    file_path = os.path.join(app.config['UPLOAD_PATH'], filename)
-    file_extension = os.path.splitext(filename)[1].lower()
-    if file_extension not in app.config['UPLOAD_EXTENSIONS']:
-        abort(400)
+    file_ext = os.path.splitext(sanitized_filename)[1].lower() # Convert to lowercase for consistent checking
+
+    if file_ext not in app.config['UPLOAD_EXTENSIONS']:
+        return None, f"File extension '{file_ext}' not allowed."
+
+    if not image_bytes:
+        return None, "Image bytes are empty or could not be read."
+    file_path = os.path.join(app.config['UPLOAD_PATH'], sanitized_filename)
 
     plate = None
     error_message = None
     try:
-        uploaded_file.save(file_path)      
+        image_bytes.save(file_path)      
     
         with open(file_path, 'rb') as fp:
             response = requests.post(
