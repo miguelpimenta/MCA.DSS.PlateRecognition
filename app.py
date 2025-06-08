@@ -39,6 +39,7 @@ app.config['UPLOAD_PATH'] = 'public/uploads'
 app.config['PLATE_RECOGNIZER_URL'] = 'https://api.platerecognizer.com/v1/plate-reader/'
 app.config['PLATE_RECOGNIZER_TOKEN'] = os.getenv('PLATE_RECOGNIZER_TOKEN')
 app.config['API_KEY'] = os.getenv('API_KEY')
+file_extension = '.jpg'  # Default file extension for images
 
 regions = ['pt', 'es'] 
 
@@ -99,10 +100,10 @@ def upload_image():
         return jsonify({'result': '403 Forbidden'}), 403
     else:        
         uploaded_file = request.files['file'] 
-        filename = uploaded_file.filename
+        #filename = uploaded_file.filename
         image_bytes = uploaded_file.read()
-        sanitized_filename = sanitize_filename(filename)
-        file_extension = os.path.splitext(sanitized_filename)[1].lower()
+        #sanitized_filename = sanitize_filename(filename)
+        #file_extension = os.path.splitext(sanitized_filename)[1].lower()
 
         plate, error = __get_plate(image_bytes)
         
@@ -115,16 +116,7 @@ def upload_image():
 
 ###
 def __get_plate(image_bytes):    
-    #filename = sanitize_filename(uploaded_file.filename)
-    #sanitized_filename = sanitize_filename(filename)
-    
-    #if not sanitized_filename:        
-    #    abort(400)
 
-    #file_ext = os.path.splitext(sanitized_filename)[1].lower() # Convert to lowercase for consistent checking
-
-    #if file_ext not in app.config['UPLOAD_EXTENSIONS']:
-    #    return None, f"File extension '{file_ext}' not allowed."
     unique_id = str(uuid.uuid4())
     temp_filename = f"{unique_id}.jpg"  # Use a unique filename to avoid conflicts
 
@@ -152,12 +144,21 @@ def __get_plate(image_bytes):
             plate = html.escape(response.json()["results"][0]["plate"])
 
             print('Plate: ' + plate.upper())
+
+            final_filename = f"{plate}{file_extension}"
+            final_file_path = os.path.join(app.config['IMAGES_PATH'], final_filename)
             
-            final_file_path = os.path.join(app.config['IMAGES_PATH'], plate.upper() + file_extension)
-            os.rename(file_path, final_file_path)
+            # Ensure we don't overwrite existing files
+            counter = 1
+            while os.path.exists(final_file_path):
+                final_filename = f"{plate}_{counter}{file_extension}"
+                final_file_path = os.path.join(app.config['IMAGES_PATH'], final_filename)
+                counter += 1
+            
+            shutil.move(file_path, final_file_path)
+            
+            
     except Exception as e:
-            #os.rename(file_path, os.path.join(app.config['UPLOAD_PATH'], plate.upper() + file_ext))
-            os.remove(file_path)
             print(str(e))
             error_message = "Internal Server Error..."
             
@@ -165,7 +166,7 @@ def __get_plate(image_bytes):
         # Ensure the temporary file is removed, even if errors occurred
         if os.path.exists(file_path):
             try:
-                os.remove(file_path)
+                os.remove(final_file_path)
                 print(f"Cleaned up temporary file: {file_path}")
             except OSError as e:
                 print(f"Warning: Could not remove temporary file {file_path}: {e}")
