@@ -102,8 +102,9 @@ def upload_image():
         filename = uploaded_file.filename
         image_bytes = uploaded_file.read()
         sanitized_filename = sanitize_filename(filename)
-        
-        plate, error = __get_plate(image_bytes, sanitized_filename)
+        file_extension = os.path.splitext(sanitized_filename)[1].lower()
+
+        plate, error = __get_plate(image_bytes, file_extension)
         
         if error:
             abort(500)
@@ -113,21 +114,23 @@ def upload_image():
         return jsonify(message), 200           
 
 ###
-def __get_plate(image_bytes, filename):    
+def __get_plate(image_bytes, file_extension):    
     #filename = sanitize_filename(uploaded_file.filename)
-    sanitized_filename = sanitize_filename(filename)
+    #sanitized_filename = sanitize_filename(filename)
     
-    if not sanitized_filename:        
-        abort(400)
+    #if not sanitized_filename:        
+    #    abort(400)
 
-    file_ext = os.path.splitext(sanitized_filename)[1].lower() # Convert to lowercase for consistent checking
+    #file_ext = os.path.splitext(sanitized_filename)[1].lower() # Convert to lowercase for consistent checking
 
-    if file_ext not in app.config['UPLOAD_EXTENSIONS']:
-        return None, f"File extension '{file_ext}' not allowed."
+    #if file_ext not in app.config['UPLOAD_EXTENSIONS']:
+    #    return None, f"File extension '{file_ext}' not allowed."
+    unique_id = str(uuid.uuid4())
+    temp_filename = f"{unique_id}.{file_extension}"
 
     if not image_bytes:
         return None, "Image bytes are empty or could not be read."
-    file_path = os.path.join(app.config['UPLOAD_PATH'], sanitized_filename)
+    file_path = os.path.join(app.config['UPLOAD_PATH'], temp_filename)
 
     plate = None
     error_message = None
