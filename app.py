@@ -93,7 +93,13 @@ def upload_image():
         return jsonify({'result': '403 Forbidden'}), 403
     else:        
         uploaded_file = request.files['file'] 
-        plate, error = __get_plate(uploaded_file)    
+        #plate, error = __get_plate(uploaded_file)    
+        filename = uploaded_file.filename
+        image_bytes = uploaded_file.read()
+        mimetype = uploaded_file.mimetype
+
+        # Pass these extracted values to the __get_plate function
+        plate, error = __get_plate(image_bytes, filename, mimetype)
         if error:
             abort(500)
         message = {
@@ -102,27 +108,34 @@ def upload_image():
         return jsonify(message), 200           
 
 ###
-def __get_plate(uploaded_file):    
-    filename = sanitize_filename(uploaded_file.filename)
+def __get_plate(image_bytes, filename, mimetype):    
+    sanitized_filename = sanitize_filename(filename)
     
-    if not filename:        
+    if not sanitized_filename:        
         abort(400)
 
-    file_path = os.path.join(app.config['UPLOAD_PATH'], filename)
     file_extension = os.path.splitext(filename)[1].lower()
     if file_extension not in app.config['UPLOAD_EXTENSIONS']:
         abort(400)
 
+    if file_extension not in app.config['UPLOAD_EXTENSIONS']:
+        abort(400)
+
+    #file_path = os.path.join(app.config['UPLOAD_PATH'], sanitized_filename)
+    if not image_bytes:
+        abort(400)
+    
     plate = None
     error_message = None
     try:
-        uploaded_file.save(file_path)      
-    
+        #uploaded_file.save(file_path)      
+        print(f"Sending file '{sanitized_filename}' with content type '{mimetype}' to plate recognizer API.")
         with open(file_path, 'rb') as fp:
             response = requests.post(
                 app.config['PLATE_RECOGNIZER_URL'],
                 data=dict(regions=regions),
-                files=dict(upload=fp),
+                #files=dict(upload=fp),
+                files={'upload': (sanitized_filename, image_bytes, mimetype)},
                 headers={'Authorization': app.config['PLATE_RECOGNIZER_TOKEN']}
             )       
             response.raise_for_status()
