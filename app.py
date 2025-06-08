@@ -79,7 +79,12 @@ def upload_files():
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400 
     uploaded_file = request.files['file'] 
-    plate, error = __get_plate(uploaded_file)
+
+    filename = uploaded_file.filename
+    image_bytes = uploaded_file.read()
+    sanitized_filename = sanitize_filename(filename)
+    
+    plate, error = __get_plate(image_bytes, sanitized_filename)
     if error:
         abort(500)
     return redirect(url_for('index'))
@@ -94,7 +99,12 @@ def upload_image():
         return jsonify({'result': '403 Forbidden'}), 403
     else:        
         uploaded_file = request.files['file'] 
-        plate, error = __get_plate(uploaded_file)    
+        filename = uploaded_file.filename
+        image_bytes = uploaded_file.read()
+        sanitized_filename = sanitize_filename(filename)
+        
+        plate, error = __get_plate(image_bytes, sanitized_filename)
+        
         if error:
             abort(500)
         message = {
