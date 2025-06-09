@@ -7,6 +7,7 @@ from werkzeug.security import safe_join
 from io import BytesIO
 from PIL import Image
 import html
+import io
 import requests
 import json
 import os
@@ -21,17 +22,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-Talisman(app, strict_transport_security=True,
-        strict_transport_security_max_age=31536000, # 1 year in seconds
-        strict_transport_security_include_subdomains=True,
-        strict_transport_security_preload=False)
+#Talisman(app, strict_transport_security=True,
+#        strict_transport_security_max_age=31536000, # 1 year in seconds
+#        strict_transport_security_include_subdomains=True,
+#        strict_transport_security_preload=False)
 
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    default_limits=["200 per day", "50 per hour"],
-    storage_uri="memory://", # You might want to use a more persistent storage in production
-)
+#limiter = Limiter(
+#    get_remote_address,
+#    app=app,
+#    default_limits=["5000 per day", "50 per hour"],
+#    storage_uri="memory://"
+#)
 
 app.config['UPLOAD_EXTENSIONS'] = ['.jpg', '.jpeg']
 app.config['IMAGES_PATH'] = 'public/images'
@@ -52,10 +53,9 @@ def index():
     files = os.listdir(app.config['IMAGES_PATH'])
     return render_template('index.html', files=files)
 
-# Checkmarx: ignore [CSRF] This GET endpoint only retrieves static images and does not modify server state.
 @app.route('/images/', methods=['GET'])
 def get_image():
-    filename =  html.escape(request.args.get('filename', ''))
+    filename = html.escape(request.args.get('filename', ''))
 
     if not re.match(r'^[a-zA-Z0-9_.-]+\.(jpg|jpeg)$', filename):
         abort(400)
@@ -79,32 +79,26 @@ def get_image():
 def upload_files():  
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400 
-    uploaded_file = request.files['file'] 
-
-    filename = uploaded_file.filename
-    image_bytes = uploaded_file.read()
-    sanitized_filename = sanitize_filename(filename)
     
-    plate, error = __get_plate(image_bytes, sanitized_filename)
+    uploaded_file = request.files['file']    
+    image_bytes = uploaded_file.read()
+    
+    plate, error = __get_plate(image_bytes)
     if error:
         abort(500)
     return redirect(url_for('index'))
 
 ## API endpoint to handle image upload and plate recognition
 @app.route("/api/plate", methods=["POST"])
-@limiter.limit("5 per minute")
+#@limiter.limit("2000 per minute")
 def upload_image():
     authorization = request.headers.get("Authorization")
 
     if authorization != (app.config['API_KEY']):
         return jsonify({'result': '403 Forbidden'}), 403
     else:        
-        uploaded_file = request.files['file'] 
-        #filename = uploaded_file.filename
-        image_bytes = uploaded_file.read()
-        #sanitized_filename = sanitize_filename(filename)
-        #file_extension = os.path.splitext(sanitized_filename)[1].lower()
-
+        uploaded_file = request.files['file']         
+        image_bytes = uploaded_file.read()        
         plate, error = __get_plate(image_bytes)
         
         if error:
@@ -127,7 +121,8 @@ def __get_plate(image_bytes):
     plate = None
     error_message = None
     try:
-        image_bytes.save(file_path)      
+        image = Image.open(io.BytesIO(image_bytes))
+        image.save(file_path)         
     
         with open(file_path, 'rb') as fp:
             response = requests.post(
@@ -142,31 +137,30 @@ def __get_plate(image_bytes):
                 raise ValueError("Invalid format!")
             
             plate = html.escape(response.json()["results"][0]["plate"])
-
-            print('Plate: ' + plate.upper())
+            plate = plate.upper()
+            
+            print('Plate: ' + plate)
 
             final_filename = f"{plate}{file_extension}"
-            final_file_path = os.path.join(app.config['IMAGES_PATH'], final_filename)
+            final_file_path = os.path.join(app.config['IMAGES_PATH'], final_filename)           
             
             # Ensure we don't overwrite existing files
             counter = 1
             while os.path.exists(final_file_path):
                 final_filename = f"{plate}_{counter}{file_extension}"
                 final_file_path = os.path.join(app.config['IMAGES_PATH'], final_filename)
-                counter += 1
-            
-            shutil.move(file_path, final_file_path)
-            
+                counter += 1            
+            shutil.copy(file_path, final_file_path)            
             
     except Exception as e:
-            print(str(e))
-            error_message = "Internal Server Error..."
+        print(str(e))
+        error_message = "Internal Server Error..."
             
     finally:
-        # Ensure the temporary file is removed, even if errors occurred
+        # remove temp file
         if os.path.exists(file_path):
             try:
-                os.remove(final_file_path)
+                os.remove(file_path)
                 print(f"Cleaned up temporary file: {file_path}")
             except OSError as e:
                 print(f"Warning: Could not remove temporary file {file_path}: {e}")
@@ -184,29 +178,12 @@ def sanitize_filename(filename):
     filename = filename.strip('. ')    
     print(f"Sanitized filename: {filename}")
     return secure_filename(filename)
-
-
-
-def __is_within_directory(directory, target):
-    safe_path = safe_join(directory, target)
-    return safe_path is not None
-    
-def __sanitize_string(string):
-    if re.fullmatch(r'[A-Z0-9\-]{1,10}', string.upper()):
-        return string.upper()
-    else:
-        raise ValueError("Invalid string format")
-    
-def __safe_hostname(url):
-    hostname = urlparse(url).hostname
-    ip = socket.gethostbyname(hostname)
-    ip_obj = ipaddress.ip_address(ip)
-    return not (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local)
     
 @app.after_request
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
+    #response.headers['X-Frame-Options'] = 'DENY'
+    response.headers.pop('X-Frame-Options', None)
     return response
 
 @app.errorhandler(400)
@@ -220,4 +197,4 @@ def forbidden():
     return jsonify({'error': 'Forbidden'}), 403
 
 if __name__ == '__main__':    
-    app.run(threaded=True, port=5001, ssl_context='adhoc')    
+    app.run(threaded=True, port=5001) #, ssl_context='adhoc')    
